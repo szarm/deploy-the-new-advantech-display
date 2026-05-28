@@ -1,0 +1,117 @@
+重启ssh
+sudo /etc/init.d/ssh restart
+
+tar -cvjf rootfs.tar.bz2 ./rootfs/*
+tar -cvjf CDU-CODE-20250704.tar.bz2 CDU-CODE
+tar -cvjf app-20250829.tar.bz2 app 
+tar -cvjf devagent-20250829.tar.bz2 dev_agent
+
+tar -xvjf app-20250627.tar.bz2  app      
+
+编译应用程序命令
+make package/hmi/clean V=s
+make package/hmi/compile V=s
+在Ubuntu上拷贝编译好的文件到nfs目录
+cp /home/ljx/ljxcdu/CDU-CODE/YTCDU/openwrt/build_dir/target-arm_cortex-a7+neon-vfpv4_glibc_eabi/hmi_cdu/build/bin/hmi_cdu /home/ljx/ljxcdu/nfs/
+开发板上面挂载文件系统
+//mount -t nfs -o nolock,nfsvers=3 192.168.3.221:/home/ljx/ljxcdu/nfs /mnt
+//mount -t nfs -o nolock,nfsvers=3 192.168.3.226:/home/ljx/ljxcdu/nfs /mnt
+mount -t nfs -o nolock,vers=3 192.168.3.226:/home/ljx/ljxcdu/nfs /mnt
+
+/usr/bin/hmi_cdu
+/etc/init.d/hmi stop
+/etc/init.d/hmi start
+
+
+调试信息logread 
+cdu_system文件夹
+开发板后台运行
+ ./mnt/hmi_cdu& 
+打印一次调试信息
+logread 
+实时打印调试信息
+logread -f
+
+编译
+make package/sense/clean V=s
+make package/sense/compile V=s
+cp /home/ljx/ljxcdu/CDU-CODE/YTCDU/openwrt/build_dir/target-arm_cortex-a7+neon-vfpv4_glibc_eabi/sense/sense  /home/ljx/ljxcdu/nfs/
+-----------------------
+cd /home/ljx/ljxcdu/CDU-CODE/YTCDU/openwrt
+
+make package/dev_agent/clean V=s
+make package/dev_agent/compile V=s
+cp /home/ljx/ljxcdu/CDU-CODE/YTCDU/openwrt/build_dir/target-arm_cortex-a7+neon-vfpv4_glibc_eabi/dev_agent/dev_agent  /home/ljx/ljxcdu/nfs/
+
+make package/hmi/clean V=s
+make package/hmi/compile V=s
+cp /home/ljx/ljxcdu/CDU-CODE/YTCDU/openwrt/build_dir/target-arm_cortex-a7+neon-vfpv4_glibc_eabi/hmi_cdu/build/bin/hmi_cdu /home/ljx/ljxcdu/nfs/
+
+启动 
+sense进程要先于hmi
+killall -9 sense
+/usr/bin/sense &
+ /usr/bin/hmi_cdu &
+killall -9 sense
+
+ ./mnt/sense &
+------------
+killall -9 dev_agent
+./mnt/dev_agent &
+killall -9 hmi_cdu
+./mnt/hmi_cdu &
+
+
+
+
+
+
+lv_obj_clear_flag(obj, LV_OBJ_FLAG_SCROLLABLE);
+
+报../rpc_server/sense_server.cpp(179): error: use of undeclared identifier 'erpc_malloc' 错误
+在sence_server.cpp中添加
+22 #include "erpc_port.h"
+
+挂载SD卡
+mount /dev/mmcblk0p1 /mnt/sdcard
+
+
+--------------------------------------------------------------------
+研华屏传文件
+传文件
+scp /home/ljx/ljxcdu/nfs/hmi_cdu root@192.168.3.3:/tmp
+scp /home/lj/lvgl_demo/build/lvgl_demo root@192.168.3.32:/home
+传目录
+scp -r /home/lj/ljxcdu/testnnm root@192.168.3.3:/home/weston/
+
+nfs目录：/home/lj/ljxcdu/nfs
+/home/lj/ljxcdu/nfs *(rw,sync,no_root_squash)
+mount -t nfs -o nolock,vers=3 192.168.3.26:/home/lj/ljxcdu/nfs /mnt
+
+source /opt/fsl-imx-xwayland/5.15-kirkstone/environment-setup-armv8a-poky-linux
+make clean
+make configure
+make build
+scp /home/lj/ljxcdu/CDU-CODE/YTCDU/app/dev_agent/build/dev_agent root@192.168.3.131:/home
+
+scp /home/lj/ljxcdu/CDU-CODE/YTCDU/app/hmi/src/build/bin/hmi_cdu  root@192.168.3.131:/home
+
+启动服务或命令：
+启用服务
+systemctl enable dev_agent.service  # 设置开机自启
+systemctl disable dev_agent.service  #关闭开机自启
+systemctl start dev_agent.service   # 立即启动服务
+systemctl stop dev_agent.service # 立即停止服务
+systemctl daemon-reload #重载配置
+systemctl restart dev_agent.service #重新启动服务
+
+systemctl enable lvgl_demo.service  # 设置开机自启
+systemctl disable lvgl_demo.service  #关闭开机自启
+systemctl start lvgl_demo.service   # 立即启动服务
+systemctl stop lvgl_demo.service # 立即停止服务
+systemctl daemon-reload #重载配置
+systemctl restart lvgl_demo.service #重新启动服务
+
+sudo systemctl stop weston.service     # 停止Weston
+sudo pkill weston                      # 强制结束Weston进程
+

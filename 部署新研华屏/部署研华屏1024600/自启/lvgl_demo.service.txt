@@ -1,0 +1,35 @@
+[Unit]
+Description=LVGL Demo Application Service
+# Critical dependencies: Ensure network, display manager, and dev_agent are fully ready
+After=network.target display-manager.service
+After=weston.service
+# Strong binding to dev_agent's completion point (inherits its 10s delay)
+# After=dev_agent.service
+# Requires=dev_agent.service
+# Explicit conflict declaration with Weston
+Conflicts=weston.service
+
+[Service]
+Type=simple
+# Stop Weston and reserve sufficient resource release time
+ExecStartPre=-/bin/systemctl stop weston.service
+ExecStartPre=-/usr/bin/pkill -9 weston
+# Extend delay to 12s (cover dev_agent's 10s delay + DRM release)
+ExecStartPre=/bin/sleep 12
+# Main application launch (remove terminal occupation)
+ExecStart=/home/lvgl_demo
+# Redirect logs to system journal (avoid terminal conflict)
+# StandardOutput=journal
+# StandardError=journal
+StandardOutput=tty
+StandardError=tty
+TTYPath=/dev/ttymxc1
+
+Restart=on-failure
+RestartSec=5
+User=root
+TimeoutStartSec=30
+
+[Install]
+WantedBy=multi-user.target
+

@@ -1,0 +1,19 @@
+[Unit]
+Description=Dev Agent Service
+After=network.target
+After=serial-getty@ttymxc1.service
+
+[Service]
+ExecStartPre=/bin/sleep 10
+Type=simple
+ExecStart=/home/dev_agent
+
+StandardOutput=tty
+StandardError=tty
+TTYPath=/dev/ttymxc1
+
+Restart=on-failure
+User=root
+
+[Install]
+WantedBy=multi-user.target

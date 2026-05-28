@@ -1,0 +1,165 @@
+......
+上接word文件部署研华屏1
+2、IP地址设置为固定
+固定800480
+一、
+修改前备份原始配置:
+cp /etc/network/interfaces /etc/network/interfaces.bak
+vi /etc/network/interfaces
+修改 eth0 配置
+auto eth0
+iface eth0 inet static
+    address 192.168.3.136
+    netmask 255.255.255.0
+    gateway 192.168.3.1
+    dns-nameservers 8.8.8.8
+重启特定网卡
+sudo ip link set eth0 down  # 关闭网卡
+sudo ip link set eth0 up    # 启动网卡
+作用：直接操作网卡接口，绕过服务依赖
+二、
+root@eamb9918-cc827f70b59f:/etc/systemd/network# sudo vi /etc/systemd/network/10-eth0.network
+root@eamb9918-cc827f70b59f:/etc/systemd/network# cat 10-eth0.network
+[Match]
+Name=eth0
+[Network]
+Address=192.168.3.136/24
+Gateway=192.168.3.1
+DNS=114.114.114.114
+root@eamb9918-cc827f70b59f:/etc/systemd/network# sudo systemctl restart systemd-networkd
+
+3.部署nng
+ 验证输出
+file /home/lj/ljxcdu/armtestNNG/v1.7.2_nng_arm_install/bin/nngcat
+# 预期输出：ELF 64-bit LSB... ARM aarch64
+
+部署到开发板：
+scp /home/lj/ljxcdu/armtestNNG/v1.7.2_nng_arm_install/lib/libnng.so* root@192.168.3.136:/usr/lib
+ls -l libnng.so*
+必须同时传输 libnng.so、libnng.so.1、libnng.so.1.7.2，缺一不可
+在研华屏执行链接
+ln -sf libnng.so.1.7.2 libnng.so.1
+ln -sf libnng.so.1 libnng.so
+
+将nngcat工具拷贝到开发板
+scp /home/lj/ljxcdu/armtestNNG/v1.7.2_nng_arm_install/bin/nngcat root@192.168.3.136:/usr/bin
+
+4、创建数据库存储节点
+创建目录：
+/opt/sqldb/
+root@eamb9918-cc827f7d5335:/opt# mkdir sqldb
+scp /home/lj/ljxcdu/CDU-CODE/config.ini root@192.168.3.136:/opt/sqldb
+存储的数据：
+/opt/sqldb/AlarmMsg.db
+/opt/sqldb/config.ini
+/opt/sqldb/config.tmp
+
+5、拷贝应用程序到/home
+scp /home/lj/ljxcdu/CDU-CODE/YTCDU/app/dev_agent/build/dev_agent root@192.168.3.136:/home
+scp /home/lj/ljxcdu/CDU-CODE/YTCDU/app/hmi/src/build/bin/hmi_cdu  root@192.168.3.136:/home
+手工 停止Weston
+sudo systemctl stop weston.service
+sudo pkill weston
+手动运行试一试
+./dev_agent &
+./hmi_cdu &
+
+更改分辨率
+main.c函数
+#if 0
+#define DISP_WIDTH  1024
+#define DISP_HEIGHT  600
+#else
+#define DISP_WIDTH 800    //horizontal resolution
+#define DISP_HEIGHT 480     //vertical resolution
+#endif
+lv_conf.h函数
+#if 0
+#define LV_HOR_RES_MAX 1024    //horizontal resolution
+#define LV_VER_RES_MAX 600     //vertical resolution
+#else
+#define LV_HOR_RES_MAX 800    //horizontal resolution
+#define LV_VER_RES_MAX 480     //vertical resolution
+#endif
+
+6、设置开机自启
+cp hmi_cdu lvgl_demo
+
+服务程序如下：
+root@eamb9918-cc827f7d5335:/etc/systemd/system# cat dev_agent.service
+[Unit]
+Description=Dev Agent Service
+After=network.target
+After=serial-getty@ttymxc1.service
+
+[Service]
+ExecStartPre=/bin/sleep 10
+Type=simple
+ExecStart=/home/dev_agent
+
+StandardOutput=tty
+StandardError=tty
+TTYPath=/dev/ttymxc1
+
+Restart=on-failure
+User=root
+
+[Install]
+WantedBy=multi-user.target
+root@eamb9918-cc827f7d5335:/etc/systemd/system# vi lvgl_demo.service
+root@eamb9918-cc827f7d5335:/etc/systemd/system# cat lvgl_demo.service
+[Unit]
+Description=LVGL Demo Application Service
+# Critical dependencies: Ensure network, display manager, and dev_agent are fully ready
+After=network.target display-manager.service
+After=weston.service
+# Strong binding to dev_agent's completion point (inherits its 10s delay)
+# After=dev_agent.service
+# Requires=dev_agent.service
+# Explicit conflict declaration with Weston
+Conflicts=weston.service
+
+[Service]
+Type=simple
+# Stop Weston and reserve sufficient resource release time
+ExecStartPre=-/bin/systemctl stop weston.service
+ExecStartPre=-/usr/bin/pkill -9 weston
+# Extend delay to 12s (cover dev_agent's 10s delay + DRM release)
+ExecStartPre=/bin/sleep 12
+# Main application launch (remove terminal occupation)
+ExecStart=/home/lvgl_demo
+# Redirect logs to system journal (avoid terminal conflict)
+# StandardOutput=journal
+# StandardError=journal
+StandardOutput=tty
+StandardError=tty
+TTYPath=/dev/ttymxc1
+
+Restart=on-failure
+RestartSec=5
+User=root
+TimeoutStartSec=30
+
+[Install]
+WantedBy=multi-user.target
+root@eamb9918-cc827f7d5335:/etc/systemd/system#
+
+手动控制服务
+systemctl enable dev_agent.service  # 设置开机自启
+systemctl disable dev_agent.service  #关闭开机自启
+systemctl start dev_aget.service   # 立即启动服务
+systemctl stop dev_agent.service # 立即停止服务
+systemctl daemon-reload #重载配置
+systemctl restart dev_agent.service #重新启动服务
+
+systemctl enable lvgl_demo.service  # 设置开机自启
+systemctl disable lvgl_demo.service  #关闭开机自启
+systemctl start lvgl_demo.service   # 立即启动服务
+systemctl stop lvgl_demo.service # 立即停止服务
+systemctl daemon-reload #重载配置
+systemctl restart lvgl_demo.service #重新启动服务
+
+
+
+
+

@@ -1,0 +1,69 @@
+在部署新的研华屏时，出现：
+root@eamb9918-cc827f7d5335:/home# ./dev_agent &
+[2] 3456
+[dev_agent] nng_listen: Address in use
+UART receive error: -1
+root@eamb9918-cc827f7d5335:/home# Failed to create front listener: Address in use
+Failed to create back listener: Address in use
+nng地址在使用
+#define PROXY_FRONT_URL "tcp://localhost:3327"
+#define PROXY_BACK_URL "tcp://localhost:3328"
+
+使用nng的pub、sub方式通讯。nng是用于研华屏内部的两个应用程序dev_agent 与hmi_cdu之间的进程间通讯，不是与研华屏外部设备通讯。之前用3327、3328这两个地址之前部署过一个研华屏，通讯是正常的。部署新研华屏时提示这两个地址在使用。难道每一个屏都要分配不一样的地址吗？能不能每个屏都公用3327与3328。
+/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/
+你在部署新研华屏时遇到的 nng_listen: Address in use 错误，是由于端口 3327 和 3328 已被占用导致的。每个设备是否需用不同端口，取决于部署环境：若多个屏部署在同一台主机上，端口必须唯一；若每屏是独立主机，则可复用端口。以下是具体分析和解决方案：
+🔧 一、问题原因分析
+端口冲突本质
+若多个屏部署在同一台主机上，端口 3327/3328 是系统级资源，无法重复绑定1。
+若新屏是独立设备，端口可复用（因不同设备的网络栈隔离）1。
+占用端口的可能来源
+残留进程：之前运行的 dev_agent 未完全退出（如崩溃后未释放端口）。
+其他服务：主机上其他程序（如测试服务、容器）占用了端口2。
+屏间冲突：多屏部署在同一主机时，端口被其他屏占用。
+🛠 二、解决方案
+方案一：为每个屏分配独立端口（推荐）
+若多屏部署在同一主机，必须分配唯一端口：
+// 新屏配置示例：修改端口号
+#define PROXY_FRONT_URL "tcp://localhost:3330"  // 改为未占用的端口
+#define PROXY_BACK_URL  "tcp://localhost:3331"
+操作步骤：
+查询可用端口：
+netstat -tuln | grep -E '3327|3328|3330|3331'  # 检查端口占用
+选择未被占用的端口（如 3330/3331），更新代码并重新部署。
+方案二：使用 IPC 替代 TCP（避免端口冲突）
+NNG 支持 IPC（进程间通信），通过文件路径而非端口通信，彻底避免冲突68：
+// 修改为 IPC 模式
+#define PROXY_FRONT_URL "ipc:///tmp/dev_agent_front.ipc"
+#define PROXY_BACK_URL  "ipc:///tmp/dev_agent_back.ipc"
+优势：
+无端口冲突风险，仅依赖文件路径（不同屏可配置不同路径）。
+性能更高（无需经过网络协议栈）6。
+方案三：启用端口重用（需系统支持）
+在绑定端口前设置 SO_REUSEADDR 选项，允许进程重启后快速复用端口：
+#include <sys/socket.h>
+ 
+int opt = 1;
+setsockopt(socket_fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
+适用场景：单屏开发环境调试时，避免进程重启后的等待时间2。
+⚠️ 三、关键排查步骤
+检查端口占用
+在主机上运行：
+lsof -i :3327  # 查看占用3327端口的进程
+lsof -i :3328
+若发现残留进程，用 kill -9 <PID> 终止。
+验证屏的部署模式
+独立主机部署：可复用 3327/3328，确保主机无其他服务占用端口。
+同一主机多屏：必须为每屏分配不同端口（如 3330+）或使用 IPC。
+💎 总结建议
+场景	推荐方案	操作
+多屏部署在同一主机	分配独立端口	修改代码端口号（如 3330/3331）
+单屏调试（需快速重启）	启用端口重用	添加 setsockopt 代码
+避免端口冲突且追求性能	改用 IPC 通信	将 URL 改为 ipc:///path/to/file.ipc
+若问题持续，可能是系统配置限制（如防火墙保留端口），建议尝试 IPC 方案或联系主机管理员检查端口保留策略16。
+通过上述方案，你可灵活解决端口冲突问题，无需强制每屏使用不同端口，但需根据部署环境选择合适策略。
+/******************************************/
+采用方案
+修改为 IPC 模式
+#define PROXY_FRONT_URL "ipc:///tmp/dev_agent_front.ipc"
+#define PROXY_BACK_URL  "ipc:///tmp/dev_agent_back.ipc"
+经测试通讯正常。
